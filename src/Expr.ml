@@ -58,7 +58,7 @@ let e1 = eval state expr1 in
 let e2 = eval state expr2 in
 let numericbool num_to_bool = if num_to_bool != 0 then true else false in
 let boolnumeric bool_to_num = if bool_to_num then 1 else 0 in
-match binop with
+match op with
 | "+" -> (e1 + e2)
 | "-" -> (e1 - e2)
 | "*" -> (e1 * e2)
