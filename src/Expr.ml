@@ -36,12 +36,12 @@ let update x v s = fun y -> if x = y then v else s y
 let s = update "x" 1 @@ update "y" 2 @@ update "z" 3 @@ update "t" 4 empty
 
 (* Some testing; comment this definition out when submitting the solution. *)
-let _ =
+(* let _ =
   List.iter
     (fun x ->
        try  Printf.printf "%s=%d\n" x @@ s x
        with Failure s -> Printf.printf "%s\n" s
-    ) ["x"; "a"; "y"; "z"; "t"; "b"]
+    ) ["x"; "a"; "y"; "z"; "t"; "b"] *)
 
 (* Expression evaluator
 
@@ -50,5 +50,26 @@ let _ =
    Takes a state and an expression, and returns the value of the expression in 
    the given state.
 *)
-let eval = failwith "Not implemented yet"
-                    
+let rec eval state expr = match expr with
+| Var v -> state v
+| Const c -> c
+| Binop (op, expr1, expr2) ->
+let e1 = eval state expr1 in
+let e2 = eval state expr2 in
+let numericbool num_to_bool = if num_to_bool != 0 then true else false in
+let boolnumeric bool_to_num = if bool_to_num then 1 else 0 in
+match binop with
+| "+" -> (e1 + e2)
+| "-" -> (e1 - e2)
+| "*" -> (e1 * e2)
+| "/" -> (e1 / e2)
+| "%" -> (e1 mod e2)
+| ">" -> boolnumeric (e1 > e2)
+| ">=" -> boolnumeric (e1 >= e2)
+| "<" -> boolnumeric (e1 < e2)
+| "<=" -> boolnumeric (e1 <= e2)
+| "==" -> boolnumeric (e1 == e2)
+| "!=" -> boolnumeric (e1 != e2)
+| "!!" -> boolnumeric (numericbool e1 || numericbool e2)
+| "&&" -> boolnumeric (numericbool e1 && numericbool e2)
+| _ -> failwith "Error!"
