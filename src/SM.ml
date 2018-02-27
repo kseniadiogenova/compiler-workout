@@ -1,4 +1,6 @@
-open GT       
+open GT    
+open List
+open Syntax  
        
 (* The type for the stack machine instructions *)
 @type insn =
@@ -26,7 +28,7 @@ type config = int list * Syntax.Stmt.config
 let rec eval (stack, (state, instream, outstream)) program = match program with
      | [] -> (stack, (state, instream, outstream))
     | instruction1 :: instruction2-> match instruction1 with
-         | CONST c -> eval (c :: stack, (state, instream, outstream)) instruction2v
+         | CONST c -> eval (c :: stack, (state, instream, outstream)) instruction2
          | READ -> eval (hd instream :: stack, (state, tl instream, outstream)) instruction2
          | WRITE -> eval (tl stack, (state, instream, outstream @ [hd stack])) instruction2
          | LD variable -> eval (state variable :: stack, (state, instream, outstream)) instruction2
@@ -55,3 +57,10 @@ let run i p = let (_, (_, _, o)) = eval ([], (Syntax.Expr.empty, i, [])) p in o
      | Expr.Const value -> [CONST value]
      | Expr.Var variable -> [LD variable]
      | Expr.Binop (operation, a, b) -> (compileExpression a) @ (compileExpression b) @ [BINOP operation]
+
+ let rec compile stmt = match stmt with
+     | Stmt.Read v -> [READ; ST v]
+     | Stmt.Write expression -> (compileExpression expression) @ [WRITE]
+     | Stmt.Assign (variable, expression) -> (compileExpression expression) @ [ST variable]
+     | Stmt.Seq (state1, state2) -> (compile state1) @ (compile state2)
+ 
