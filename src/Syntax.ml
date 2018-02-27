@@ -41,7 +41,29 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval state expr = match expr with
+      | Var v -> state v
+      | Const c -> c
+      | Binop (op, expr1, expr2) ->
+      let e1 = eval state expr1 in
+      let e2 = eval state expr2 in
+      let numericbool num_to_bool = if num_to_bool != 0 then true else false in
+      let boolnumeric bool_to_num = if bool_to_num then 1 else 0 in
+      match op with
+      | "+" -> (e1 + e2)
+      | "-" -> (e1 - e2)
+      | "*" -> (e1 * e2)
+      | "/" -> (e1 / e2)
+      | "%" -> (e1 mod e2)
+      | ">" -> boolnumeric (e1 > e2)
+      | ">=" -> boolnumeric (e1 >= e2)
+      | "<" -> boolnumeric (e1 < e2)
+      | "<=" -> boolnumeric (e1 <= e2)
+      | "==" -> boolnumeric (e1 == e2)
+      | "!=" -> boolnumeric (e1 != e2)
+      | "!!" -> boolnumeric (numericbool e1 || numericbool e2)
+      | "&&" -> boolnumeric (numericbool e1 && numericbool e2)
+      | _ -> failwith "Error!"
 
   end
                     
@@ -65,7 +87,12 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval (state, instream, outstream) statement = match statement with
+       | Read v -> (Expr.update v (hd instream) state, tl instream, outstream)
+       | Write expression -> (state, instream, outstream @ [Expr.eval state expression])
+       | Assign (variable, expression) -> (Expr.update variable (Expr.eval state expression) state, instream, outstream)
+       | Seq (state1, state2) -> eval (eval (state, instream, outstream) state1) state2
+       | _ -> failwith "Incorrect statement"
                                                          
   end
 
