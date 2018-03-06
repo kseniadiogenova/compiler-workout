@@ -50,7 +50,6 @@ let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in 
    Takes a program in the source language and returns an equivalent program for the
    stack machine
  *)
- 
   let rec compileExpression expression = match expression with
       | Expr.Const value -> [CONST value]
       | Expr.Var variable -> [LD variable]
@@ -62,4 +61,3 @@ let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in 
       | Stmt.Write expression -> (compileExpression expression) @ [WRITE]
       | Stmt.Assign (variable, expression) -> (compileExpression expression) @ [ST variable]
       | Stmt.Seq (state1, state2) -> (compile state1) @ (compile state2)
-                         
