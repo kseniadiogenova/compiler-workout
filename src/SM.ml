@@ -1,4 +1,4 @@
-open GT
+open GT     
 open List  
 open Language
        
@@ -39,27 +39,24 @@ let rec eval (stack, (state, instream, outstream)) program = match program with
                eval (res :: tlstack, (state, instream, outstream)) instruction2
   
   
-
 (* Top-level evaluation
-
      val run : prg -> int list -> int list
-
-   Takes an input stream, a program, and returns an output stream this program calculates
+   Takes a program, an input stream, and returns an output stream this program calculates
 *)
-let run p i = let (_, (_, _, o)) = eval ([], (Expr.empty, i, [])) p in o
+let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in o
 
 (* Stack machine compiler
-
      val compile : Language.Stmt.t -> prg
-
    Takes a program in the source language and returns an equivalent program for the
    stack machine
  *)
- let rec compileExpression expression = match expression with
+ 
+  let rec compileExpression expression = match expression with
       | Expr.Const value -> [CONST value]
       | Expr.Var variable -> [LD variable]
       | Expr.Binop (operation, a, b) -> (compileExpression a) @ (compileExpression b) @ [BINOP operation]
-    
+  
+
   let rec compile stmt = match stmt with
       | Stmt.Read v -> [READ; ST v]
       | Stmt.Write expression -> (compileExpression expression) @ [WRITE]
