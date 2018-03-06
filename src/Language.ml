@@ -2,6 +2,8 @@
    The library provides "@type ..." syntax extension and plugins like show, etc.
 *)
 open GT
+open List
+open Ostap
 
 (* Opening a library for combinator-based syntax analysis *)
 open Ostap.Combinators
@@ -44,8 +46,34 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval state expr = match expr with
+      | Var v -> state v
+      | Const c -> c
+      | Binop (op, expr1, expr2) ->
+      let e1 = eval state expr1 in
+      let e2 = eval state expr2 in
+      let numericbool num_to_bool = if num_to_bool != 0 then true else false in
+      let boolnumeric bool_to_num = if bool_to_num then 1 else 0 in
+      match op with
+      | "+" -> (e1 + e2)
+      | "-" -> (e1 - e2)
+      | "*" -> (e1 * e2)
+      | "/" -> (e1 / e2)
+      | "%" -> (e1 mod e2)
+      | ">" -> boolnumeric (e1 > e2)
+      | ">=" -> boolnumeric (e1 >= e2)
+      | "<" -> boolnumeric (e1 < e2)
+      | "<=" -> boolnumeric (e1 <= e2)
+      | "==" -> boolnumeric (e1 == e2)
+      | "!=" -> boolnumeric (e1 != e2)
+      | "!!" -> boolnumeric (numericbool e1 || numericbool e2)
+      | "&&" -> boolnumeric (numericbool e1 && numericbool e2)
+      | _ -> failwith "Error!"
 
+      let ostap_for_list ops = 
+       let ostap_binop op = (ostap ($(op)), fun x y -> Binop (op, x, y)) in 
+       List.map ostap_binop ops
+       
     (* Expression parser. You can use the following terminals:
 
          IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
@@ -53,7 +81,21 @@ module Expr =
    
     *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      primary: x:IDENT {Var x} 
+              | x:DECIMAL {Const x} 
+              | -"(" parse -")";
+       parse: 
+         !(Util.expr
+           (fun x -> x)
+           [|
+             `Lefta, ostap_for_list ["!!"];
+             `Lefta, ostap_for_list ["&&"];
+             `Nona,  ostap_for_list [">="; "<="; "<"; ">"; "=="; "!="];
+             `Lefta, ostap_for_list ["+"; "-"];
+             `Lefta, ostap_for_list ["*"; "/"; "%"]
+           |]
+           primary
+         )
     )
 
   end
@@ -78,11 +120,20 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval (state, instream, outstream) statement = match statement with
+       | Read v -> (Expr.update v (hd instream) state, tl instream, outstream)
+       | Write expression -> (state, instream, outstream @ [Expr.eval state expression])
+       | Assign (variable, expression) -> (Expr.update variable (Expr.eval state expression) state, instream, outstream)
+       | Seq (state1, state2) -> eval (eval (state, instream, outstream) state1) state2
+       | _ -> failwith "Incorrect statement"
 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      parse: seq | stmt;
+       seq: l:stmt -";" r:parse { Seq (l, r) };
+       stmt:  "read" -"(" x:IDENT -")" { Read x }
+            | "write" -"(" e:!(Expr.parse) -")" { Write e }
+            | x:IDENT -":=" e:!(Expr.parse) { Assign (x, e) }
     )
       
   end
