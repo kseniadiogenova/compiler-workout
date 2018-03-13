@@ -80,7 +80,65 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile env code = failwith "Not yet implemented"
+
+let rec compile env code =
+  let mov op1 op2 =
+     match op1, op2 with
+     | R _, _ | _, R _ -> [Mov (op1, op2)]
+     | _ -> [Mov (op1, eax); Mov (eax, op2)]
+   in
+   let rec compile_insn env = function
+     | CONST x ->
+       let addr, env' = env#allocate in
+       env', [Mov (L x, addr)]
+     | LD x ->
+       let addr, env' = (env#global x)#allocate in
+       env', mov (M (env#loc x)) addr
+     | ST x ->
+       let addr, env' = (env#global x)#pop in
+       env', mov addr (M (env#loc x))
+     | READ ->
+       let addr, env' = env#allocate in
+       env', [Call "Lread"; Mov (eax, addr)]
+     | WRITE ->
+       let addr, env' = env#pop in
+       env', [Push addr; Call "Lwrite"; Pop eax]
+     | BINOP op ->
+       let op2, op1, env' = env#pop2 in
+       let addr, env'' = env'#allocate in
+       let set_zero r = Binop ("^", r, r)
+       in
+       env'', match op with
+       | "*" | "+" | "-" ->
+         [Mov (op1, eax); Binop (op, op2, eax); Mov (eax, addr)]
+       | "/" | "%" ->
+         let result = if op = "/" then eax else edx in
+         [Mov (op1, eax); Cltd; Mov (op2, edi); IDiv edi; Mov (result, addr)]
+       | ">" | ">=" | "<" | "<=" | "==" | "!=" ->
+         let op_to_suffix = function
+           | ">" -> "g"
+           | ">=" -> "ge"
+           | "<" -> "l"
+           | "<=" -> "le"
+           | "==" -> "e"
+           | "!=" -> "ne"
+           | _ -> failwith "unknown operator"
+         in
+         [Mov (op1, eax); set_zero edx; Binop ("cmp", op2, eax); Set (op_to_suffix op, "%dl"); Mov (edx, addr)]
+       | "&&" | "!!" ->
+         let cmp_zero opnd reg raddr = [set_zero reg; Binop ("cmp", opnd, reg); Set ("ne", raddr)]
+         in
+         cmp_zero op1 eax "%al" @ cmp_zero op2 edx "%dl" @ [Binop (op, eax, edx); Mov (edx, addr)]
+       | _ -> failwith "unknown binop"
+     | _ -> failwith "Not yet supported"
+  in
+   match code with
+   | [] -> env, []
+   | instr::code' ->
+     let env', asm = compile_insn env instr in
+    let env'', asm' = compile env' code' in
+     env'', asm @ asm'
+ 
 
 (* A set of strings *)           
 module S = Set.Make (String)
