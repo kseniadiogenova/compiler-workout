@@ -14,22 +14,26 @@ module State =
     (* State: global state, local state, scope variables *)
     type t = {g : string -> int; l : string -> int; scope : string list}
 
+    let fail x = failwith (Printf.sprintf "%s undefined" x)
+
     (* Empty state *)
-    let empty = failwith "Not implemented"
+    let empty = { g = fail; l = fail; scope = [] }
 
     (* Update: non-destructively "modifies" the state s by binding the variable x 
        to value v and returns the new state w.r.t. a scope
     *)
-    let update x v s = failwith "Not implemented"
+    let update x v s =
+       let update' f y = if x = y then v else f y in 
+       if List.mem x s.scope then { s with l = update' s.l } else { s with g = update' s.g }
                                 
     (* Evals a variable in a state w.r.t. a scope *)
-    let eval s x = failwith "Not implemented" 
+    let eval s x = (if List.mem x s.scope then s.l else s.g) x
 
     (* Creates a new scope, based on a given state *)
-    let enter st xs = failwith "Not implemented"
+    let enter st xs = { g = st.g; l = fail; scope = xs }
 
     (* Drops a scope *)
-    let leave st st' = failwith "Not implemented"
+    let leave st st' = { st with g = st'.g }
 
   end
     
@@ -60,7 +64,33 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)                                                       
-    let eval st expr = failwith "Not implemented"      
+    let rec eval state expr = match expr with
+      | Var v -> State.eval state v
+      | Const c -> c
+      | Binop (op, expr1, expr2) ->
+        let e1 = eval state expr1 in
+        let e2 = eval state expr2 in
+        let numericbool num_to_bool = if num_to_bool != 0 then true else false in
+        let boolnumeric bool_to_num = if bool_to_num then 1 else 0 in
+        match op with
+        | "+" -> (e1 + e2)
+        | "-" -> (e1 - e2)
+        | "*" -> (e1 * e2)
+        | "/" -> (e1 / e2)
+        | "%" -> (e1 mod e2)
+        | ">" -> boolnumeric (e1 > e2)
+        | ">=" -> boolnumeric (e1 >= e2)
+        | "<" -> boolnumeric (e1 < e2)
+        | "<=" -> boolnumeric (e1 <= e2)
+        | "==" -> boolnumeric (e1 == e2)
+        | "!=" -> boolnumeric (e1 != e2)
+        | "!!" -> boolnumeric (numericbool e1 || numericbool e2)
+        | "&&" -> boolnumeric (numericbool e1 && numericbool e2)
+        | _ -> failwith "Error!"
+ 
+      let ostap_for_list ops = 
+        let ostap_binop op = (ostap ($(op)), fun x y -> Binop (op, x, y)) in 
+        List.map ostap_binop ops     
 
     (* Expression parser. You can use the following terminals:
 
@@ -69,7 +99,21 @@ module Expr =
                                                                                                                   
     *)
     ostap (                                      
-      parse: empty {failwith "Not implemented"}
+      primary: x:IDENT {Var x} 
+              | x:DECIMAL {Const x} 
+              | -"(" parse -")";
+       parse: 
+         !(Util.expr
+           (fun x -> x)
+           [|
+              `Lefta, ostap_for_list ["!!"];
+              `Lefta, ostap_for_list ["&&"];
+              `Nona,  ostap_for_list [">="; "<="; "<"; ">"; "=="; "!="];
+              `Lefta, ostap_for_list ["+"; "-"];
+              `Lefta, ostap_for_list ["*"; "/"; "%"]
+            |]
+            primary
+          )
     )
     
   end
@@ -87,7 +131,7 @@ module Stmt =
     (* empty statement                  *) | Skip
     (* conditional                      *) | If     of Expr.t * t * t
     (* loop with a pre-condition        *) | While  of Expr.t * t
-    (* loop with a post-condition       *) | Repeat of t * Expr.t
+    (* loop with a post-condition       *) | Repeat of Expr.t * t
     (* call a procedure                 *) | Call   of string * Expr.t list with show
                                                                     
     (* The type of configuration: a state, an input stream, an output stream *)
@@ -104,11 +148,48 @@ module Stmt =
 
        which returns a list of formal parameters, local variables, and a body for given definition
     *)
-    let eval env ((st, i, o) as conf) stmt = failwith "Not implemented"
+    let rec eval env (state, input, output) st = 
+      match st with
+      | Assign (x, e) -> (State.update x (Expr.eval state e) state, input, output)
+      | Read x -> 
+        (match input with 
+        | z::i -> (State.update x z state, i, output)
+        | [] -> failwith "input empty")
+      | Write e -> (state, input, output @ [(Expr.eval state e)])
+      | Seq (left_st, right_st) -> (eval env (eval env (state, input, output) left_st) right_st)
+      | Skip -> (state, input, output)
+      | If (e, s1, s2) -> if Expr.eval state e != 0 then eval env (state, input, output) s1 else eval env (state, input, output) s2
+      | While  (e, s) -> if Expr.eval state e != 0 then eval env (eval env (state, input, output) s) st else (state, input, output)
+      | Repeat (e, s) -> 
+        let (state', input', output') = eval env (state, input, output) s in
+        if Expr.eval state' e == 0 then eval env (state', input', output') st else (state', input', output')
+      | Call (f, e)  ->
+        let args, locals, body = env#definition f
+        in let rec zip = function
+        | x::xs, y::ys -> (x, y) :: zip (xs, ys)
+        | [], []       -> []
+        in let assign_arg st1 (x, e) = State.update x (Expr.eval state e) st1
+        in let withArgs = List.fold_left assign_arg (State.enter state @@ args @ locals) @@ zip (args, e)
+        in let state', input, output = eval env (withArgs, input, output) body
+        in State.leave state state', input, output
                                 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented"}
+      parse: seq | stmt;
+       stmt: read | write | assign | if_ | while_ | for_ | repeat_ | skip;
+       read: "read" -"(" x:IDENT -")" { Read x };
+       write: "write" -"(" e:!(Expr.parse) -")" { Write e };
+       assign: x:IDENT -":=" e:!(Expr.parse) { Assign (x, e) };
+       if_: "if" e:!(Expr.parse) "then" s:parse "fi" {If (e, s, Skip)} 
+          | "if" e:!(Expr.parse) "then" s1:parse else_elif:else_or_elif "fi" {If (e, s1, else_elif)};
+       else_or_elif: else_ | elif_;
+       else_: "else" s:parse {s};
+       elif_: "elif" e:!(Expr.parse) "then" s1:parse s2:else_or_elif {If (e, s1, s2)};
+       while_: "while" e:!(Expr.parse) "do" s:parse "od" {While (e, s)};
+       for_: "for" init:parse "," e:!(Expr.parse) "," s1:parse "do" s2:parse "od" {Seq (init, While (e, Seq(s2, s1)))};
+       repeat_: "repeat" s:parse "until" e:!(Expr.parse) {Repeat (e, s)};
+       skip: "skip" {Skip};
+       seq: left_st:stmt -";" right_st:parse { Seq (left_st, right_st) }
     )
       
   end
@@ -121,7 +202,11 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
 
     ostap (
-      parse: empty {failwith "Not implemented"}
+      argument: IDENT;
+       parse:
+        "fun" fname:IDENT "(" args: !(Util.list0 argument) ")"
+        locals: (%"local" !(Util.list argument))?
+        "{" body: !(Stmt.parse) "}" { (fname, (args, (match locals with None -> [] | Some l -> l), body))}
     )
 
   end
@@ -137,7 +222,15 @@ type t = Definition.t list * Stmt.t
 
    Takes a program and its input stream, and returns the output stream
 *)
-let eval (defs, body) i = failwith "Not implemented"
+let eval (defs, body) i = let module DefMap = Map.Make (String) in
+   let definitionsMap = List.fold_left (fun m ((name, _) as definitions) -> DefMap.add name definitions m) DefMap.empty defs in
+   let env = (object method definition name = snd (DefMap.find name definitionsMap) end) in
+   let _, _, output = Stmt.eval env (State.empty, i, []) body
+   in output
                                    
 (* Top-level parser *)
-let parse = failwith "Not implemented"
+let parse = ostap (
+   defs:!(Definition.parse) * body:!(Stmt.parse) {
+     (defs, body) 
+   }
+ )
